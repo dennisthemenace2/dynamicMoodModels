@@ -1,3 +1,8 @@
+/*
+ * 
+ * This file contains simulations fuctions for the Social integration mood model.
+ * 
+ */
 
 #include <iostream>
 
@@ -237,12 +242,6 @@ Rcpp::DataFrame  simulateDCM(arma::vec  X,arma::mat  A,NumericVector time,Numeri
 Rcpp::List errorDcmFnCpp(NumericVector X,NumericMatrix A,NumericVector time,NumericVector sigmas,NumericVector taus,Rcpp::DataFrame data,Rcpp::DataFrame test){
   
   DataFrame sim = simulateDCM(  as<arma::vec>(wrap(X)),  as<arma::mat>(wrap(A)), time,sigmas, taus, data.nrow()+ test.nrow());
-
- 
-// colnames(sim) =  colnames(A);
-  //NumericVector resid = as<NumericVector>(mod["residuals"]);
-//CharacterVector datanames = data.names();
-
 
   NumericVector meanErrors(data.ncol()) ;
   NumericVector testErrors(data.ncol()) ;

@@ -26,337 +26,7 @@ model <- setRefClass("model",
                      ))
 
 
-
-
-moodModel <- setRefClass("moodModel",
-                         fields = list(parameters = "numeric",params ="data.frame"  ),
-                         contains = "model", 
-                         
-                         methods = list(
-                           simulate = function(length) {
-                             
-                             state <- c(oevs = params$oevs, 
-                                        appraisal =  params$appraisal,
-                                        moodLevel = params$moodLevel,
-                                        thoughts = params$thoughts,
-                                        sensitivity = params$sensitivity,
-                                        beta = params$beta,
-                                        STprospMoodLevel = params$STprospMoodLevel
-                             )
-                             
-                             times <- seq(from = 0, to = length*0.1, by =0.1)
-                             out <- ode (times = times, y = state, func = .self$rigidode, parms = .self$params, method = "ode45")
-                             
-                             ###check length for ode
-                             out = out[1:length,]
-                             
-                             as.data.frame(out)
-                           },
-                           rigidode = function(t, state, parameters){
-                             with(as.list(c(state, parameters)),{
-                               # rate of change
-                               
-                               STprospMoodLevel = beta * params$LTprospMoodLevel
-                               
-                               deltaMood = moodLevel - beta* params$LTprospMoodLevel
-                               
-                               dOevs = -sensitivity*  ( (oevs *max(0,deltaMood) + ( 1- oevs)*min(0,deltaMood ) )) 
-                               
-                               psi = params$vulnerability * oevs * thoughts + params$coping * (1 - (1-oevs) * (1-thoughts));
-                               dAppraisal <- (psi - appraisal) ;
-                               
-                               epsilon = appraisal * params$w_appraisal_mood + thoughts * params$w_thoughts_mood;  
-                               dMoodLevel  <- params$coping * max(0,epsilon - moodLevel) + params$vulnerability * min(0,epsilon -moodLevel)
-                               
-                               phi = appraisal * params$w_appraisal_thoughts + moodLevel * params$w_mood_thoughts
-                               dThoughts <- params$coping * max(0,phi - thoughts)+ params$vulnerability * min(0,phi- thoughts)
-                               
-                               eta = moodLevel * params$w_mood_sens + thoughts * params$w_thoughts_sens;
-                               
-                               dSensitivity <-  params$coping * max (0, eta - sensitivity) + params$vulnerability * min(0,eta - sensitivity)  
-                               
-                               dBeta <- params$vulnerability * (moodLevel/params$LTprospMoodLevel - beta  )+ params$coping *(1-beta)
-                               
-                               # return the rate of change
-                               list(c(dOevs, dAppraisal, dMoodLevel,dThoughts,dSensitivity,dBeta,STprospMoodLevel))
-                             }) 
-                           },
-                           setParameters = function(parameters){
-                             
-                             params$w_appraisal_mood <<- parameters[1];
-                             params$w_thoughts_mood <<- 1- parameters[1];
-                             
-                             params$w_appraisal_thoughts <<- parameters[2];
-                             params$w_mood_thoughts <<- 1 - parameters[2];
-                             
-                             params$w_mood_sens <<- parameters[3];
-                             params$w_thoughts_sens <<- 1 - parameters[3];
-                             
-                             if(length(parameters)>3){
-                               .self$params$oevs =  parameters[4];
-                               .self$params$appraisal = parameters[5];
-                               
-                               .self$params$moodLevel =  parameters[10];
-                               .self$params$thoughts  =   parameters[11];
-                               
-                               .self$params$sensitivity = parameters[6];
-                               .self$params$beta = parameters[7];
-                               .self$params$STprospMoodLevel = parameters[8] ;
-                               .self$params$coping = parameters[9]
-                               .self$params$vulnerability = 1.0 - parameters[9]
-                             }
-                           },
-                           
-                           train = function(data) {
-                             
-                             ###check data
-                             back =data[1,]
-                             for(i in 1:ncol(data)){
-                               if(is.na(data[1,i]) ){
-                                 ###take second.. ?
-                                 data[1,i] = data[which(!is.na(data[,i]))[1],i]
-                               }
-                             }
-                             ###if all are NA then dont know... I shoudl search this one too I guess
-                             for(i in 1:ncol(data)){
-                               if(is.na(data[1,i]) ){
-                                 ###take second.. ?
-                                 data[1,i] = 0.5
-                               }
-                             }
-                             
-                             
-                             if(! is.null(data$oevs[1]) ){
-                               .self$params$oevs = data$oevs[1];
-                             }
-                             if(! is.null(data$appraisal[1]) ){
-                               .self$params$appraisal = data$appraisal[1];
-                             }
-                             if(! is.null(data$moodLevel[1]) ){
-                               .self$params$moodLevel =  data$moodLevel[1];
-                             }
-                             if(! is.null(data$thoughts[1]) ){
-                               .self$params$thoughts = data$thoughts[1];
-                             }
-                             if(! is.null(data$sensitivity[1]) ){
-                               .self$params$sensitivity =data$sensitivity[1];
-                             }
-                             if(! is.null(data$beta[1]) ){
-                               .self$params$beta = data$beta[1];
-                             }
-                             if(! is.null(data$STprospMoodLevel[1]) ){
-                               .self$params$STprospMoodLevel = data$STprospMoodLevel[1] ;
-                             }
-                             if(! is.null(data$coping[1]) ){
-                               .self$params$coping =data$coping[1]
-                             }
-                             .self$params$vulnerability = 1.0 - .self$params$coping 
-                             
-                             N_Points = nrow(data)
-                             N_params = 11
-                             
-                             optimErrorFunction <- function(parameters) { 
-                               .self$setParameters(parameters)
-                               sim = .self$simulate(N_Points)
-                               
-                               targetNames = colnames(data)
-                               err = c()
-                               for(i in 1:length(targetNames)){
-                                 idx= which(colnames(sim)==targetNames[i])
-                                 if(length(idx)==0){ ## not found
-                                   next;
-                                 }
-                                 tmp = sim[,idx] - data[,i]
-                                 tmp[is.na(tmp)]=0
-                                 dif = mean( (tmp)^2 )
-                                 err = c(err,dif)
-                               }
-                               
-                               sum(err)
-                             }
-                             
-                             par = optim(par = rep(0.5,N_params), fn = optimErrorFunction, method = "L-BFGS-B", lower = 0, upper=1)
-                             
-                             .self$setParameters(par$par)
-                             
-                             if(par$convergence != 0){
-                               cat('search not converged !!!\n')   
-                             }
-                             par$par
-                           },
-                           predict = function(x) {      
-                             .self$simulate(length(x) )
-                           },
-                           getNumberOfParameters =function(){
-                             3
-                           },
-                           getNumberOfConcepts = function(){
-                             8
-                           },
-                           multiOpti = function(data,iterations = 10, population = 20,parallel = FALSE,refPoint=NULL){
-                             library("mco")
-                             library("eaf")
-                             library("emoa")
-                             if(is.null(refPoint)){
-                               refPoint= rep(1,ncol(data))
-                             }
-                             ##optimisation function
-                             errorFn <- function(parameters) {
-                               
-                               .self$setParameters(parameters) ## init the model with the new parameters
-                               
-                               numPoints = dim(data)[1]
-                               simData = .self$simulate(numPoints)
-                               
-                               sim = data.matrix(simData);
-                               sim[is.na(sim)] =  0
-                               sim[sim==Inf] = 0
-                               
-                               sim= as.data.frame(sim)
-                               
-                               targetNames = colnames(data)
-                               err = c()
-                               for(i in 1:length(targetNames)){
-                                 idx= which(colnames(sim)==targetNames[i])
-                                 if(length(idx)==0){ ## not found
-                                   next;
-                                 }
-                                 tmp =  sim[,idx] - data[,i]
-                                 tmp[is.na(tmp)] =0
-                                 dif = mean( (tmp)^2 )
-                                 err = c(err,dif)
-                               }
-                               
-                               return(err) # objectives error
-                             }
-                             
-                             ##vectorized
-                             errorFnVec = function(param){
-                               apply(param, 1,errorFn) 
-                             }
-                             
-                             GASettings <- list()
-                             GASettings$parameterNr = 11
-                             GASettings$objectiveNr = ncol(data)
-                             
-                             GASettings$generationNr =iterations# set 
-                             GASettings$popSize = population #
-                             
-                             GASettings$cProb = 0.9  #crossover prob
-                             GASettings$cDist = 5   #crossover distribution index
-                             GASettings$mProb = 0.1  #mutation prob
-                             GASettings$mDist = 10   #mutation distribution index
-                             
-                             ###############TEST
-                        #     dhv =c()
-                        #     reportFunction = function(error){
-                               #  print('reported error')
-                              #  print(error)
-                               # print(dominatedHypervolume(error))
-                        #       dhv<<- c(dhv,dominatedHypervolume(error))
-                        #     }
-                            
-                             
-                        #     optimVecDoParTMP= function(param){
-                               #  print(param)
-                        #       splitList <- split(param, 1:NROW(param))
-                               #  print(splitList)
-                        #       matrix(unlist(mclapply( splitList, errorFn,mc.cores= detectCores())),ncol=GASettings$objectiveNr,byrow = T )
-                        #     }
-                        #     require('parallel')
-                        #     res = search(iterations, population,0.1,0.01,GASettings$parameterNr,errorFn,GASettings$objectiveNr ,0,1,T)
-                        #     return(res)
-                                  
-                        #     result = my_nsga2Vec(optimVecDoParTMP,GASettings$parameterNr,GASettings$objectiveNr  ,
-                        #                          GASettings$generationNr ,GASettings$popSize , GASettings$cProb,
-                        #                          GASettings$mProb,0, 1,reportFunction)
-                             
-                         #    return(list(result,dhv) )
-                             ################TEST
-                             
-                             if(parallel){
-                               require(parallel) 
-                               
-                               if(.Platform$OS.type == "windows"){ # do windows stuff
-                                 print('You use windows, sorry this is not implemented!')                                
-                               } 
-
-                               optimVecDoPar= function(param){
-                                 splitList <- split(param, 1:NROW(param))
-                                 matrix(unlist(mclapply( splitList, errorFn,mc.cores= 2)),nrow=GASettings$objectiveNr,byrow = F )
-                               }
-
-
-                               r1 <- nsga2(optimVecDoPar, 
-                                           GASettings$parameterNr, 
-                                           GASettings$objectiveNr,
-                                           generations=GASettings$generationNr,
-                                           popsize=GASettings$popSize, 
-                                           cprob=GASettings$cProb,  
-                                           cdist=GASettings$cDist,   
-                                           mprob=GASettings$mProb,  
-                                           mdist=GASettings$mDist,   
-                                           lower.bounds=rep(0, GASettings$parameterNr),
-                                           upper.bounds=rep(1, GASettings$parameterNr),
-                                       #    vectorized=T,refDHV =refPoint)
-                                       vectorized=T)
-                               
-                               #  stopCluster(cl)
-                             }else{
-                               r1 <- nsga2(errorFnVec, 
-                                           GASettings$parameterNr, 
-                                           GASettings$objectiveNr,
-                                           generations=GASettings$generationNr,
-                                           popsize=GASettings$popSize, 
-                                           cprob=GASettings$cProb,  
-                                           cdist=GASettings$cDist,   
-                                           mprob=GASettings$mProb,  
-                                           mdist=GASettings$mDist,   
-                                           lower.bounds=rep(0, GASettings$parameterNr),
-                                           upper.bounds=rep(1, GASettings$parameterNr),
-                                           #vectorized=T,refDHV =refPoint)
-                                           vectorized=T)
-                             }
-                             
-                             return(r1)
-                             
-                           }
-                         ))
-
-
-moodModel$methods( 
-  
-  initialize =
-    function(...) {
-      
-      .self$params <<- data.frame( ##basic model
-        ####### these have to be changed somehow
-        oevs = 0.5, 
-        appraisal = 0.5,
-        moodLevel =1 , ###fellign great
-        thoughts= 0.1,
-        STprospMoodLevel=1,
-        LTprospMoodLevel= 1 ,#
-        sensitivity=0.5, 
-        coping=  0.5,
-        vulnerability = 1- 0.5,
-        beta = 1.0,
-        ######## parameters to estimate #####
-        w_appraisal_mood = 0.7,  
-        w_thoughts_mood = 0.3,
-        w_appraisal_thoughts = 0.6,
-        w_mood_thoughts=0.4,
-        w_mood_sens = 0.5, #
-        w_thoughts_sens = 1- 0.5#
-      )
-      
-      callSuper(...)
-    },
-  finalize = function() {
-  })
-
-
-
+library(deSolve)
 
 ######letz try to get altafs social support model
 colVars <- function(x, na.rm=FALSE, dims=1, unbiased=TRUE, SumSquares=FALSE,
@@ -369,6 +39,7 @@ colVars <- function(x, na.rm=FALSE, dims=1, unbiased=TRUE, SumSquares=FALSE,
   (colSums(x^2, na.rm, dims) - colSums(x, na.rm, dims)^2/N) / Nm1
 }
 
+# R implementation of the social integration model
 socialModel <- setRefClass("socialModel",
                          fields = list(parameters = "numeric",params ="data.frame",true_parameters = "numeric"  ),
                          contains = "model", 
@@ -601,32 +272,7 @@ socialModel <- setRefClass("socialModel",
                              GASettings$mProb = 0.1  #mutation prob
                              GASettings$mDist = 10   #mutation distribution index
                              
-                             ###############TEST
-                             #     dhv =c()
-                             #     reportFunction = function(error){
-                             #  print('reported error')
-                             #  print(error)
-                             # print(dominatedHypervolume(error))
-                             #       dhv<<- c(dhv,dominatedHypervolume(error))
-                             #     }
-                             
-                             
-                             #     optimVecDoParTMP= function(param){
-                             #  print(param)
-                             #       splitList <- split(param, 1:NROW(param))
-                             #  print(splitList)
-                             #       matrix(unlist(mclapply( splitList, errorFn,mc.cores= detectCores())),ncol=GASettings$objectiveNr,byrow = T )
-                             #     }
-                             #     require('parallel')
-                             #     res = search(iterations, population,0.1,0.01,GASettings$parameterNr,errorFn,GASettings$objectiveNr ,0,1,T)
-                             #     return(res)
-                             
-                             #     result = my_nsga2Vec(optimVecDoParTMP,GASettings$parameterNr,GASettings$objectiveNr  ,
-                             #                          GASettings$generationNr ,GASettings$popSize , GASettings$cProb,
-                             #                          GASettings$mProb,0, 1,reportFunction)
-                             
-                             #    return(list(result,dhv) )
-                             ################TEST
+                           
                              
                              if(parallel){
                                require(parallel) 
@@ -657,17 +303,9 @@ socialModel <- setRefClass("socialModel",
                                    }
                                    fit = matrix(unlist(fitlist),nrow=GASettings$objectiveNr,byrow = F )
                                   
-                                  # print( matrix(unlist(predlist),ncol=GASettings$objectiveNr,byrow = T )
-                                  # )
-                                   
-                                  # print(matrix(unlist(predlist),nrow=GASettings$objectiveNr,byrow = F) )
-                                   
+                                    
                                     pred = matrix(unlist(predlist),ncol=GASettings$objectiveNr,byrow = T )
                                    
-                                  #  dist = matrix(unlist(distlist),ncol=GASettings$objectiveNr,byrow = T )
-                                    
-                                   #print(dim(fitmatrixMean))
-                                   #print(colMeans(pred))
                                    
                                    fitmatrixMean<<-rbind(fitmatrixMean, colMeans(pred))
                                    fitmatrixVar<<- rbind(fitmatrixVar, colVars(pred))
@@ -788,6 +426,7 @@ socialModel <- setRefClass("socialModel",
 require('matrixStats')
 
 
+#this implementation used the C++ functions and is much faster than the R implementation
 socialModel2 <- setRefClass("socialModel2",
                            fields = list(parameters = "numeric",true_parameters = "numeric"  ),
                            contains = "model", 
@@ -798,40 +437,6 @@ socialModel2 <- setRefClass("socialModel2",
                              },
                              
                              getParameters = function(){
-                             #  ret = c(.self$params$socialInteraction, #1
-                              #         .self$params$enjoyedActivites,#2
-                            #           .self$params$activitiesCarriedOut, #3
-                            #           .self$params$socialIntegration,#4
-                            #           .self$params$moodLevel,#5
-                            #           .self$params$networkStrength, #6
-                            #           .self$params$eta_socialInteraction,#7
-                            #           .self$params$eta_mood,#8
-                            #           .self$params$eta_socialIntegration,#9
-                            #           .self$params$eta_activitiesCarriedOut,#10
-                            #           .self$params$eta_enjoyedActivites,#11
-                            #           .self$params$sigma_enjoyedActivites,#12
-                            #           .self$params$tau_enjoyedActivites,#13
-                            #           .self$params$sigma_socialInteraction,#14
-                            #           .self$params$tau_socialInteraction,#15
-                            #           .self$params$sigma_mood,#16
-                            #           .self$params$tau_mood,#17
-                            #           .self$params$sigma_activitiesCarriedOut,#18
-                            #           .self$params$tau_activitiesCarriedOut,#19
-                            #           .self$params$sigma_socialIntegration,#20
-                            #           .self$params$tau_socialIntegration,#21
-                            #           .self$params$w_socialInteraction_mood,#22
-                            #           .self$params$w_socialInteraction_network,#23
-                            #           .self$params$w_socialInteraction_activitiesCarriedOut,#24
-                            #           .self$params$w_mood_socialIntegration,#25
-                            #           .self$params$w_mood_socialInteraction,#26
-                            #           .self$params$w_mood_enjoyedActivites,#27
-                            #           .self$params$w_socialIntegration_networkStrength,#28
-                            #           .self$params$w_socialIntegration_activitiesCarriedOut,#29
-                            #           .self$params$w_activitiesCarriedOut_socialIntegration,#30
-                            #           .self$params$w_enjoyedActivites_mood,#31
-                            #           .self$params$w_enjoyedActivites_activitiesCarriedOut#32
-                            #   )
-                               
                                return(.self$parameters)
                              },
                              setParameters = function(parameters){
@@ -873,38 +478,27 @@ socialModel2 <- setRefClass("socialModel2",
                                fitmatrixMean = matrix(,nrow =iterations,ncol = ncol(data) )
                                fitmatrixMin = matrix(,nrow =iterations,ncol = ncol(data) )
                                
-                              # fitmatrixMean = matrix(,nrow =iterations+1,ncol = ncol(data) )
-                               
-                               #fitmatrixVar  = matrix(,nrow =iterations+1,ncol = ncol(data) )
-                               errorMatrix  = matrix(,nrow =iterations,ncol = ncol(data) )
+                                 errorMatrix  = matrix(,nrow =iterations,ncol = ncol(data) )
                                errorMatrixMin  = matrix(,nrow =iterations,ncol = ncol(data) )
                                
                                colnames(fitmatrixMean) = colnames(data)
                                distmatrix = matrix(,nrow =iterations,ncol =population )
-                               # distmatrixVar  = matrix(,nrow =0,ncol = GASettings$objectiveNr )
+                        
                                lastPreError = NULL
                                lastFitError = NULL
                                iterationCnt = 1;
                                ##vectorized
                                
-                              # dhvmatrix = matrix(0,nrow =iterations+1,ncol =1 )
-                               
+                                 
                                errorFnOLD <- function(parameters) {
                                  
-                                # .self$setParameters(parameters) ## init the model with the new parameters
                                  
                                  numPoints = dim(data)[1]
                                  if(!is.null(testdata)){
                                    numPoints = numPoints +nrow(testdata)
                                  }
-                                 #simData = .self$simulate(numPoints)
                                  sim =  simulateSM(parameters,numPoints)
                                  
-                                 #sim = data.matrix(simData);
-                             #    sim[is.na(sim)] =  0
-                            #     sim[sim==Inf] = 0
-                                 
-                                 #sim= as.data.frame(sim)
                                  
                                  targetNames = colnames(data)
                                  err = c()
@@ -922,11 +516,8 @@ socialModel2 <- setRefClass("socialModel2",
                                      testErr =c(testErr,dif)
                                      
                                      dif = sum( (tmp[1:nrow(data) ])^2 )
-                                   #  print('error and dif')
-                                  #   print(dif)
                                      dif = dif /notNAs
                                     
-                                  #   print(notNAs)
                                      err = c(err,dif)
                                    }else{
                                      dif = mean( (tmp)^2 )
@@ -944,8 +535,6 @@ socialModel2 <- setRefClass("socialModel2",
                               
                                ##gets called with the current population so we do bookkeeping here
                                reportFunction=function(param, ...){
-                              #   print('param')
-                              #   param
                                  res = apply(param, 1,errorFnCpp,data=data,test=testdata) 
                                  
                                  fitlist = list()
@@ -978,59 +567,16 @@ socialModel2 <- setRefClass("socialModel2",
                                }
                                 
                                errorFnVec = function(param){
-                                 #errorFnCpp(NumericVector parameters,Rcpp::DataFrame data,Rcpp::DataFrame test){
-                                   
-                               #  
-                                 #res = list()
-                                # print(dim(param))
-                                
-                                # for(i in 1:nrow(param)){
-                                 #  res[[i]] = errorFnCpp(param[i,],data,testdata);
-                                  # print(length((param[i,])) )
-                                #   res[[i]] = errorFnOLD(param[i,])
-                                # }
                                  res = apply(param, 1,errorFnCpp,data=data,test=testdata) 
-                               
                                  
                                  fitlist = list()
                                  predlist =list()
-                                 # distlist = list()
                                  for(i in 1:length(res)){
                                    fitlist[[i]]= res[[i]][[1]]
-                                  # print('error')
-                                  # print(res[[i]][[1]])
-                                 #  print(resCpp[[i]][[1]])
                                    predlist[[i]]= res[[i]][[2]]
-                                 #  print('pred error')
-                                   #print(res[[i]][[2]])
-                                  # print(resCpp[[i]][[2]])
-                                   
                                  }
                                  fit = matrix(unlist(fitlist),nrow=GASettings$objectiveNr,byrow = F )
-                                    
-                                # onedhv = dominated_hypervolume(points = (fit),ref = c(1,1,1,1) )
-                                # dhvmatrix[iterationCnt,1]<<-onedhv
                                  
-                                # pred = matrix(unlist(predlist),ncol=GASettings$objectiveNr,byrow = T )
-                                 
-                             #    print(dim(rowMeans(fit)))
-                                # fitmatrixMean[iterationCnt,]<<-colMeans(pred)
-                                # fitmatrixMin[iterationCnt,] <<- colMins(pred)
-                                # errorMatrix[iterationCnt,] <<-rowMeans(fit)
-                                # errorMatrixMin[iterationCnt,] <<-rowMins(fit)
-
-                                # lastPreError<<-pred
-                                # lastFitError<<-fit
-                             #    fitmatrixVar[iterationCnt,]<<-  colVars(pred)
-                                 
-                                 ##estimate distance to true parameters
-                                 # p_dist = c()
-                                # for(i in 1:nrow(param)){
-                                   # p_dist = c(p_dist,sqrt( sum( (.self$true_parameters-splitList[[i]])^2 ) ))
-                                #   distmatrix[iterationCnt,i]<<- sqrt( sum( (.self$true_parameters-param[i,])^2 ) )
-                                # }
-                                 
-                                # iterationCnt<<-iterationCnt+1  
                                  fit
                                }
                                
@@ -1048,7 +594,7 @@ socialModel2 <- setRefClass("socialModel2",
                          
                               # ff <- function(x) reportFunction(x, ...)
                                
-                        
+                               upper = rep(1, GASettings$parameterNr)
                                r1 <- nsga2(errorFnVec, 
                                              GASettings$parameterNr, 
                                              GASettings$objectiveNr,
@@ -1059,7 +605,7 @@ socialModel2 <- setRefClass("socialModel2",
                                              mprob=GASettings$mProb,  
                                              mdist=GASettings$mDist,   
                                              lower.bounds=rep(0, GASettings$parameterNr),
-                                             upper.bounds=rep(1, GASettings$parameterNr),
+                                             upper.bounds=upper,
                                              vectorized=T,refDHV =refPoint,reportfunction = reportFunction)
                                            #  vectorized=T)
                                  
@@ -1067,16 +613,10 @@ socialModel2 <- setRefClass("socialModel2",
                                    r1$fitmatrixMean = fitmatrixMean
                                    r1$fitmatrixMin = fitmatrixMin
                                    r1$errorMatrixMin = errorMatrixMin
-                            #       r1$fitmatrixVar = fitmatrixVar
                                    r1$errorMatrix = errorMatrix
                                    r1$distmatrix = distmatrix
                                    r1$lastPreError= lastPreError
-                                  # if(is.null(lastFitError)){
-                                  #   print('is null')
-                                  # }
                                    r1$lastFitError= lastFitError
-                                  # print('appened')
-                                  # r1$dhvmatrix = dhvmatrix
                                  }
                                 
                                
@@ -1092,24 +632,17 @@ socialModel2 <- setRefClass("socialModel2",
                               }
                               ##optimisation function
                               
-                              # dhvmatrix = matrix(0,nrow =iterations+1,ncol =1 )
-                              
                               errorFnOLD <- function(parameters) {
                                 
-                                # .self$setParameters(parameters) ## init the model with the new parameters
                                 errall = NULL
                                 
                                 for(x in 1:length(data_list)){
                                  # print('inloop')
                                   numPoints = dim(data_list[[x]])[1]
        
-                                  #simData = .self$simulate(numPoints)
                                   sim =  simulateSM(parameters,numPoints)
                                    
                                   targetNames = colnames(data_list[[x]])
-                                #  print(targetNames)
-                               #   print('sim:')
-                                 # print(colnames(sim))
                                   err = c()
                                   testErr=c()
                                   for(i in 1:length(targetNames)){
@@ -1139,25 +672,14 @@ socialModel2 <- setRefClass("socialModel2",
                               }
                               
                               errorFnVec = function(param){
-                                #errorFnCpp(NumericVector parameters,Rcpp::DataFrame data,Rcpp::DataFrame test){
-                                
-                                #  
                                   res = list()
-                                # print(dim(param))
                                 
                                   for(i in 1:nrow(param)){
-                                    #res[[i]] = errorFnCpp(param[i,],data,testdata);
-                                # print(length((param[i,])) )
                                    res[[i]] = errorFnOLD(param[i,])
                                   }
-                              #  res = apply(param, 1,errorFnCpp,data=data,test=testdata) 
-                                #print(length(res))
-                                
-                              #  print(length(res[[1]]))
                                 
                                 fit = matrix(unlist(res),nrow=GASettings$objectiveNr,byrow = F )
-                               # print(dim(fit))
- 
+                           
                                 fit
                               }
                               
@@ -1173,6 +695,7 @@ socialModel2 <- setRefClass("socialModel2",
                               GASettings$mProb = 0.1  #mutation prob
                               GASettings$mDist = 10   #mutation distribution index
                               
+                              upper = rep(1, GASettings$parameterNr)
                               
                               r1 <- nsga2(errorFnVec, 
                                           GASettings$parameterNr, 
@@ -1184,7 +707,7 @@ socialModel2 <- setRefClass("socialModel2",
                                           mprob=GASettings$mProb,  
                                           mdist=GASettings$mDist,   
                                           lower.bounds=rep(0, GASettings$parameterNr),
-                                          upper.bounds=rep(1, GASettings$parameterNr),
+                                          upper.bounds=upper,
                                           vectorized=T,refDHV =refPoint)
                               #  vectorized=T)
                              
@@ -1194,5 +717,40 @@ socialModel2 <- setRefClass("socialModel2",
                              
                              initialize =function(...) {
                                .self$parameters <<-rep(0.5,32)
+                              
+                                  .self$parameters[1]= 0.5#socialInteraction, #1
+                                  .self$parameters[2]=0.5#         .self$params$enjoyedActivites,#2
+                                  .self$parameters[3]=0.5#           .self$params$activitiesCarriedOut, #3
+                                  .self$parameters[4]=0.4#4 socialIntegration
+                                  .self$parameters[5]=0.5#moodLevel
+                                  .self$parameters[6]=0.5 #6networkStrength
+                                
+                                  .self$parameters[7]= 0.1#       eta_socialInteraction = 0.1,,#7
+                                  .self$parameters[8] = 0.1#8   eta_mood =0.1 ,
+                                  .self$parameters[9] =0.1#eta_socialIntegration = 0.1,#9
+                                  .self$parameters[10] =0.1#eta_activitiesCarriedOut = 0.1,#10
+                                  .self$parameters[11] =0.1#eta_enjoyedActivites = 0.1,,#11
+                                  .self$parameters[12] =4 #sigma_enjoyedActivites =4 ,,#12
+                                  .self$parameters[13] =0.34#tau_enjoyedActivites= 0.34,,#13
+                                  .self$parameters[14] = 3#sigma_socialInteraction= 3,,#14
+                                  .self$parameters[15] =0.44#tau_socialInteraction= 0.44,,#15
+                                  .self$parameters[16] = 4#sigma_mood =4 ,,#16
+                                  .self$parameters[17] = 0.5 #tau_mood= 0.5,,#17
+                                  .self$parameters[18] =5#sigma_activitiesCarriedOut = 5,,#18
+                                  .self$parameters[19] = 0.34#tau_activitiesCarriedOut= 0.34,,#19
+                                  .self$parameters[20] =3#sigma_socialIntegration = 3,,#20
+                                  .self$parameters[21] = 0.34#tau_socialIntegration= 0.34,,#21
+                                  .self$parameters[22] = 0.5#w_socialInteraction_mood= 0.5,,#22
+                                  .self$parameters[23] = 0.4# w_socialInteraction_network= 0.4,,#23
+                                  .self$parameters[24] =0.6#w_socialInteraction_activitiesCarriedOut= 0.6,,#24
+                                  .self$parameters[25] =0.3#w_mood_socialIntegration= 0.3,,#25
+                                  .self$parameters[26] =0.5#w_mood_socialInteraction = 0.5,,#26
+                                  .self$parameters[27] =0.5#w_mood_enjoyedActivites= 0.5,,#27
+                                  .self$parameters[28] = 0.5#w_socialIntegration_networkStrength = 0.5,,#28
+                                  .self$parameters[29] =0.5#w_socialIntegration_activitiesCarriedOut=0.5 ,###missing in paper,#29
+                                  .self$parameters[30] = 0.6#w_activitiesCarriedOut_socialIntegration= 0.6,,#30
+                                  .self$parameters[31] =0.5#w_enjoyedActivites_mood=0.5 ,,#31
+                                  .self$parameters[32] =0.5#w_enjoyedActivites_activitiesCarriedOut= 0.5,#32
+                                     
                              }
                            ))
