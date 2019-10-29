@@ -125,7 +125,7 @@ for(i in 1:length(noise_seq) ){
 
 system("notify-send \"R script finished running\"")
 
-
+#function that created a table of the model performance scores
 createScoreTable = function(resultList){
   
   modelScores = list()
@@ -149,6 +149,7 @@ createScoreTable = function(resultList){
 
 noiseScoreTable = createScoreTable(resultList_withNoise)
 ###
+##these plots assess the convergence of the optimization  
 #estimate prediction errors
 noise_plot = plotScoreTable(noiseScoreTable,noise_seq)
 noise_plot<-add_trace(noise_plot,x = noise_seq, y = sqrt(avgPredictionErrorsVar) , type = 'scatter', mode = 'lines+markers',
@@ -189,6 +190,8 @@ noise_plot
 #noise_plot
 
 ###
+
+#This code creates the plot presented in the paper regarding the influence of measurement noise
 
 ##plot in same color
 p <- plot_ly() 
@@ -347,10 +350,9 @@ for(na in 0:6){
 
 system("notify-send \"R script finished running\"")
 
-#naAvgPredErr = matrix(avgPredictionErrorsAndNa,nrow=6,byrow = T)
 
-#####
-
+## This code creates the second plot presented in the paper.
+#It shows the influence of missing value on the prediction performance.
 
 noiseScoreTableNA = createScoreTable(resultList_withNoiseAndNa )
 ###

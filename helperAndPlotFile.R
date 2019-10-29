@@ -1,6 +1,6 @@
 ##some plot and helper functions
 
-
+##plot concepts in the data
 plotSocial=function(data){
   plot(data[,2],col=2,ylim=c(0,1))
   for(i in 3:ncol(data)){
@@ -9,7 +9,7 @@ plotSocial=function(data){
   legend('topleft', legend = c(colnames(data)[2:ncol(data)]),col = c(2:(ncol(data)+1) ),lty = rep(1,ncol(data)))
 }
 
-
+##helper function to select the analysizes features in the data
 selectParameters = function(simData,features=NULL){
   ### we need to find good parameters
   if(is.null(features)){
@@ -41,6 +41,7 @@ library(doMC)
 registerDoMC(cores=4)
 ### 
 
+##helper function to estimate the performance on the data
 estimateModelPerformance = function(smodel,new_prams=NULL, data_list, pop_seq,nruns,niterations,numOfParams,select_features=NULL){
   
   #check for differetn parameter settings
@@ -83,11 +84,9 @@ estimateModelPerformance = function(smodel,new_prams=NULL, data_list, pop_seq,nr
       for(run in 1:nruns){
         nsga_params = smodel$multiOpti(data = simdata,iterations = niterations, population = pop_size,parallel=T,numOfParams=numOfParams ,refPoint = rep(1,ncol(simdata)),testdata) ### maybe ref point not used
         run_list[[run]] = nsga_params
-        #run_list =c(run_list,nsga_params)
       }
       ##save params object
       nsga_params_list[[length(nsga_params_list)+1]]= run_list
-      #nsga_params_list=c(nsga_params_list, run_list)
     }
     param_objects[[length(param_objects)+1]] = nsga_params_list ##save for later use
     
@@ -102,7 +101,7 @@ estimateModelPerformance = function(smodel,new_prams=NULL, data_list, pop_seq,nr
   ret ###return results
 }
 
-###plot some things
+###plots to assess the optimization performance
 
 estimateAverages = function(result){
   
@@ -191,7 +190,7 @@ RowVar <- function(x, ...) {
   rowSums((x - rowMeans(x, ...))^2, ...)/(dim(x)[2] - 1)
 }
 
-
+##load plotly
 require(plotly)
 
 f <- list(
@@ -205,7 +204,7 @@ f2 <- list(
   color = "black"
 )
 
-
+##plot the course of the DHV during optimization
 plotDHV = function(avgs,p=NULL,name=c('Full model')){
   if(is.null(p)){
     p <- plot_ly() 
@@ -240,7 +239,7 @@ plotDHV = function(avgs,p=NULL,name=c('Full model')){
   p
 }
 
-
+##plot the distance to the true parameters during optimization
 plotDistance = function(avgs,type='avg',p=NULL,name=c('Full model') ){
   if(is.null(p)){
     p <- plot_ly() 
@@ -280,7 +279,7 @@ plotDistance = function(avgs,type='avg',p=NULL,name=c('Full model') ){
   p
 }
 
-
+##plot the error in each concept during optimization
 plotConceptError = function(avgs){
   p <- plot_ly() 
   
@@ -318,7 +317,7 @@ plotConceptError = function(avgs){
   
 }
 
-
+##plot the fitting error to the data during optimization
 plotConceptFitError = function(avgs){
   p <- plot_ly() 
   
@@ -338,8 +337,6 @@ plotConceptFitError = function(avgs){
       conceptMean = rowMeans(predErr[[i]])
       conceptVar = RowVar(predErr[[i]])
     }
-    
-    
     
     cname = names(predErr)[i]
     
@@ -366,6 +363,7 @@ plotConceptFitError = function(avgs){
   
 }
 
+##plot the minimal fittig error over the course of optimization
 plotConceptFitErrorMin = function(avgs){
   p <- plot_ly() 
   
@@ -447,77 +445,8 @@ plotConceptErrorMin = function(avgs){
   p
   
 }
-#########copy paste
 
-estimateModelPerformanceSimplerModel = function(smodel,data_list, pop_seq,nruns,niterations,select_features=NULL,overWriteLength=F ){
-  
-  #check for differetn parameter settings
-  #for(paramsetting in 1:length(new_prams)){
-  ret = foreach(paramsetting= 1:length(data_list) ) %dopar%{
-    param_objects = list()
-    
-    ##measure time
-    #  start_time <- Sys.time()
-    
-    #   smodel$true_parameters = new_prams[[paramsetting]] ##hack for distantace to true params
-    # genModel$setParameters(new_prams[[paramsetting]])
-    
-    #simdata = genModel$simulate(N)
-    simdata = data_list[[paramsetting]]
-    simdata = selectParameters(simdata,select_features) # strip of time and stuff
-    #  print(dim(simdata))
-    ##prepare learning and test
-    if(overWriteLength){ ## used for learn the model from shorter ts
-      N =  nrow(simdata)
-    }
-    
-    
-    if(ncol(simdata)==1){
-      savedName = colnames(simdata)
-      print('fix 1 feature only')
-      testdata = simdata[(N-6):N]
-      simdata =simdata[1:(N-7)]
-      
-      testdata = as.data.frame(testdata)
-      simdata = as.data.frame(simdata)
-      colnames(testdata)= select_features
-      colnames(simdata)= select_features
-    }else{
-      
-      testdata = simdata[(N-6):N,]
-      simdata =simdata[1:(N-7),]
-    }
-    
-    ### ok letz optimisze....   
-    ##for different populations sizes
-    nsga_params_list = list()
-    for(pop_size in pop_seq){ 
-      run_list=list()
-      for(run in 1:nruns){
-        nsga_params = smodel$multiOpti(data = simdata,iterations = niterations, population = pop_size,parallel=T,refPoint = rep(1,ncol(simdata)),testdata) ### maybe ref point not used
-        run_list[[run]] = nsga_params
-        #run_list =c(run_list,nsga_params)
-      }
-      ##save params object
-      nsga_params_list[[length(nsga_params_list)+1]]= run_list
-      #nsga_params_list=c(nsga_params_list, run_list)
-    }
-    param_objects[[length(param_objects)+1]] = nsga_params_list ##save for later use
-    
-    # end_time <- Sys.time()
-    #  passed_time_loop = end_time - start_time
-    #  cat(c('elapsed time:',passed_time_loop,' ',attr(passed_time_loop,'units'),' iteration:',paramsetting,'\n') )
-    
-    param_objects ##return result
-  }
-  
-  
-  ret ###return results
-}
-
-
-
-
+###helper function to create missing values
 removeDays = function(datalist,NdaysToRemove=2,ntrain=42){
   
   for(i in 1:length(datalist) ){
@@ -532,7 +461,7 @@ removeDays = function(datalist,NdaysToRemove=2,ntrain=42){
   datalist
 }
 
-
+###helper function
 removeDaysWithNames = function(datalist,NdaysToRemove,ntrain=42,offset = 0){
   if(class(NdaysToRemove) !='list'){
     print('param has be of type list')
@@ -559,7 +488,7 @@ removeDaysWithNames = function(datalist,NdaysToRemove,ntrain=42,offset = 0){
   datalist
 }
 
-
+### function to add Gaussian noise to the data 
 addNoise = function(datalist,NoiseLvl=0.01,train=42){
   
   for(i in 1:length(datalist) ){
@@ -596,7 +525,7 @@ addNoise = function(datalist,NoiseLvl=0.01,train=42){
 }
 
 
-##new modelScore
+##function to estimate the performance measures of a model
 estimateModelScore = function(result){
   
   DHVs= NULL
@@ -635,27 +564,10 @@ estimateModelScore = function(result){
           fitErrors = matrix(,nrow=0,ncol=nrow(nsga_obj$lastFitError))
           # print(nrow(nsga_obj$lastFitError))
         }
-        # predErrors = rbind(predErrors,nsga_obj$fitmatrixMin[nrow(nsga_obj$fitmatrixMin),] )
         predErrors = rbind(predErrors,nsga_obj$lastPreError )
         
         fitErrors  = rbind(fitErrors,t(nsga_obj$lastFitError) )
-        #          print('row')
-        #    print(nsga_obj$lastFitError[1,])
-        #    print('col')
-        #    print(t(nsga_obj$lastFitError)[,1])
-        
-        
-        ##clientIndividual
-        #  if(is.null(clientFit)){
-        #   clientFit = matrix(,nrow=0,ncol=ncol(nsga_obj$errorMatrixMin))
-        #  clientPred= matrix(,nrow=0,ncol=ncol(nsga_obj$fitmatrixMin))
-        #  }
-        # clientFit =  rbind(clientFit,nsga_obj$errorMatrixMin[nrow(nsga_obj$errorMatrixMin),] )
-        #  clientPred= rbind(clientPred,nsga_obj$fitmatrixMin[nrow(nsga_obj$fitmatrixMin),] )
-        
-        #clientFit =  rbind(clientFit,nsga_obj$value )
-        #clientPred= rbind(clientPred,nsga_obj$lastPreError )
-        
+
         cCorScore = c()
         for(z in 1:ncol(nsga_obj$value)){
           cscoreTmp = cor(nsga_obj$lastFitError[z,],nsga_obj$lastPreError[,z])
@@ -663,15 +575,11 @@ estimateModelScore = function(result){
           corScores= c(corScores,cscoreTmp)
         }
         MeanCorOptims =c(MeanCorOptims,(cCorScore))
-        #  MeanPredErrorsOption = c(MeanPredErrorsOption, mean(as.numeric(nsga_obj$lastPreError )) )
-        
+
         MeanPredErrorsOption = c(MeanPredErrorsOption, colMeans(nsga_obj$lastPreError ) )
         
         cpe =abs( cor(nsga_obj$par,nsga_obj$value ))
-        # if(any(is.na(cpe))){
-        ##better skip
-        # print('corretation between params and vlue contrains NAs')
-        #  }else{
+
         if(is.null(corPramErrorClient)){
           corPramErrorClient = matrix(rowMaxs(cpe),ncol= nrow(cpe) )
         }else{
@@ -694,10 +602,6 @@ estimateModelScore = function(result){
       
     }## end pop list
     DHVs = c(DHVs,mean(clientDHVs) )
-    #  print(DHVs)
-    #  if(mean(clientDHVs)==0){
-    #    stop()
-    #  }
     ##calculate correlation scores
     if(is.null(corPramError)){
       corPramError = matrix(colMaxs(abs(corPramErrorClient) ),nrow=1)
@@ -712,9 +616,6 @@ estimateModelScore = function(result){
   #descriptive score= mu* (1-sigma)
   descriptiveScore = mean(DHVs)*(1- sqrt(var(DHVs)))
   # absolute pred score
-  #  mean(predErrors)
-  #corScores = abs(corScores)
-  #print(corScores)
   
   if(sum(is.na(corScores)) >0 ){
     print('corScores contains NAs!')
@@ -723,19 +624,7 @@ estimateModelScore = function(result){
   
   absolutePredScore= (1-mean(as.numeric(sqrt(predErrors) )))* (1-sqrt(var(sqrt(as.numeric(predErrors)))))
   relativePredScore = max(mean(corScores),0)*(1-sqrt(var(corScores)))
-  
-  # absolutePredScore= (1-mean(as.numeric(sqrt(MeanPredErrorsOption) )))* (1-sqrt(var(sqrt(as.numeric(MeanPredErrorsOption)))))
-  # relativePredScore = max(mean(MeanPredErrorsOption),0)*(1-sqrt(var(MeanPredErrorsOption)))
-  
-  
-  
-  ##estimate correlation for all in one.
-  #overAllCorScores = c() 
-  #for(z in 1:ncol(predErrors)){
-  #  overAllCorScores= c(overAllCorScores,cor(fitErrors[,z],predErrors[,z]))
-  #}
-  #relOverAll = max(mean(overAllCorScores),0) *(1-sqrt(var(overAllCorScores)))
-  
+
   contributing = colMaxs(corPramError)>=0.35
   corParamParam = abs(corParamParam)
   collLinear = colMeans(corParamParam)>=0.35
@@ -761,11 +650,8 @@ estimateModelScore = function(result){
     #  print(sum(is.na(MeanCorOptims) ))
     MeanCorOptims[is.na(MeanCorOptims)] = 0
   }
-  #  mysample = myboot(predErrors,fitErrors,getPredictiveScore,5000);
   mysample = myboot(MeanPredErrorsOption,MeanCorOptims,getPredictiveScore,2000);
-  
-  
-  
+
   desc_low = as.numeric(quantile(descSample,c(0.025)) )#as.numeric(descbca[1])
   desc_high = as.numeric( quantile(descSample,c(0.975)) ) #as.numeric(descbca[2])
   
@@ -776,8 +662,6 @@ estimateModelScore = function(result){
   pred_low= as.numeric(quantile(mysample ,c(0.025)))
   pred_high =as.numeric( quantile(mysample ,c(0.975)) )
   
-  
-  
   list('descriptiveScore'=mean(descSample),#mean(x.boot$data),#descriptiveScore,
        'descriptiveScoreVar'=var(descSample),
        'descriptiveScoreMean'=mean(DHVs),
@@ -786,17 +670,15 @@ estimateModelScore = function(result){
        'relativePredScore'=relativePredScore,
        'relativePredScoreVar' =var(corScores),
        'sensitivityScore'=sensitivityScore,
-       'descriptiveScore_boot'= c(desc_low,desc_high ),# dhv_ci$bca[4:5] ,
-       'predictiveScore_boot'= c(pred_low,pred_high),#dhv_ci_pred$bca[4:5],
-       'predictiveScore_mean_boot'=  mean(mysample),#mean(x.boot_pred$data),
-       'predictiveScore_var_boot'= var(mysample),#predScoreSamples = mysample,
+       'descriptiveScore_boot'= c(desc_low,desc_high ),
+       'predictiveScore_boot'= c(pred_low,pred_high),
+       'predictiveScore_mean_boot'=  mean(mysample),
+       'predictiveScore_var_boot'= var(mysample),
        'n_states'=n_states,'n_params'=n_params)
 }
 
 
-
 ###plot distance for the list
-
 plotDistanceList = function(avgs_list,type='avg',names=c()){
   
   p <- plot_ly() 
@@ -944,10 +826,9 @@ plotConceptPredErrorMinAVG = function(avgs,p=NULL,name=c('Full model'),ylab=c('M
   p
   
 }
+
 ####estimtae min error and predErr
-
-
-
+# function can be used to calucalte the errors, however they are already calculated by the modified mco package
 estimateSimulatedPredictionErrors = function(result,model,simData,n_train=42){
   fittingError= NULL
   predErr = NULL
@@ -1004,9 +885,6 @@ estimateSimulatedPredictionErrors = function(result,model,simData,n_train=42){
           err = ( sdata[,colnames(nsga_obj$fitmatrixMean)[pi] ] - simData[[i]][,colidx])^2
           fiterr_tmp = mean(na.omit(err[1:n_train]) )
           prederr_tmp = mean(na.omit(err[(n_train+1):N ]) )
-          
-          #  plot(sdata[,colnames(nsga_obj$fitmatrixMean)[pi] ],ylim=c(0,1))
-          #  points(simData[[i]][,colidx])
           
           ###RAW ERRORS
           rawErrors = rawErrorsList[[pi]]
@@ -1124,15 +1002,13 @@ estimatePredictionErrors = function(result){
 }
 
 
-###get mean predrttction erro
-
+###get mean prediction error
 getMeanModelPredictionList = function(data_list,N=49){
   res = matrix(,nrow=0,ncol=4)
   colnames(res) = c('moodLevel', 'enjoyedActivites','socialInteraction','activitiesCarriedOut')
   
   fitres = matrix(,nrow=0,ncol=4)
   colnames(fitres) = colnames(res)
-  
   
   rawErrorsList = list()
   for(i in 1:4){
@@ -1210,8 +1086,7 @@ remstuff = function(data,remnames){
   data
 }
 
-##map to correct nams
-
+##map to correct names
 replaceEmaNameWithSimNames=function(df){
   simNames = c("moodLevel","enjoyedActivites","socialInteraction","activitiesCarriedOut")
   emaNames = c( "mood","enjoyed activities" ,"social contact","pleasant activities")
@@ -1371,7 +1246,6 @@ require(mco)
 
 
 ##bootstrap function
-
 myboot= function(x,y=NULL,f,N= 10^4){
   if(class(x)=='numeric'){
     k = length(x)
@@ -1405,36 +1279,11 @@ myboot= function(x,y=NULL,f,N= 10^4){
       if(is.null(y)){
         ret = f(x[s,])
       }else{
-        
-        # chunkLen = 80
-        #  if(nrow(x)%% chunkLen == 0){
-        ##special hack for the data
-        ##select batches
-        #    s =sample(1:(k/chunkLen),k/chunkLen,replace = T)
-        #  print('get chunks')
-        
-        
-        #    chunks = ceiling(s/chunkLen) #
-        ##create chunk indices
-        #   idx = c()
-        #    for(i in 1:length(chunks)){
-        #      idx = c(idx, c((chunks[i]-1)*chunkLen +1): ((chunks[i])*chunkLen) )
-        
-        #   }
-        
-        #    ret = f(x[idx,],y[idx,]) 
-        #  }else{
         ret = f(x[s,],y[s,]) 
-        # }
       }
       
     }
     store[i]= ret
-    #if(is.null(store)){
-    #  store = matrix(ret,ncol=length(ret))
-    #}else{
-    #  store = rbind(store,ret)
-    #}
     
   }
   store 
@@ -1464,23 +1313,11 @@ getPredictiveScore=function(pred,fit){
   abspred = (1-mean(sqrt(pred) )) * (1-sqrt(var(sqrt(as.numeric(pred)) )))
   corScores =c()
   
-  #chunkLen = 80
   if(class(pred)=='numeric'){
     corScores = fit
   }else{
     for(z in 1:ncol(pred)){
-      #  if(nrow(pred)%% chunkLen == 0){
-      #   for(k in 1:(nrow(pred)/chunkLen)){
-      #    cscore= cor(fit[ (((k-1)*chunkLen)+1):(k*chunkLen),z],pred[( ((k-1)*chunkLen)+1):(k*chunkLen),z])
-      #    if(is.na(cscore)){
-      #        cscore = 0
-      #     }
-      #      corScores= c(corScores,cscore)
-      #   }
-      
-      #  }else{
       corScores= c(corScores,cor(fit[,z],pred[,z]))
-      # }
     }
   }
   #print(corScores)
@@ -1505,26 +1342,23 @@ estimateMeanModelPerformanceScores = function(meanPredList){
   }
   relativePredScore = max(mean(corScores),0)*(1-sqrt(var(corScores)))
   
-  
   descSample = myboot(meanModelDHVs,y=NULL,getDescriptiveScore,10000) 
   
   mysample = myboot(meanPredList$predictionError,meanPredList$fittingError,getPredictiveScore,10000);
   
-  
-  desc_low = quantile(descSample,c(0.025))#as.numeric(descbca[1])
-  desc_high = quantile(descSample,c(0.975))#as.numeric(descbca[2])
+  desc_low = quantile(descSample,c(0.025))#
+  desc_high = quantile(descSample,c(0.975))#
   
   # print(mysample)
   pred_low= quantile(mysample,c(0.025))
   pred_high = quantile(mysample,c(0.975))
   
   list('decriptive'=mean(descSample),'decriptiveVar'=var(descSample),
-       #  'decriptiveVar_low'= dhv_ci$bca[4],'decriptiveVar_high'= dhv_ci$bca[5],
        'decriptiveVar_low'= desc_low,'decriptiveVar_high'= desc_high,
        'absPredictive'=abspred,'absPredictiveVar'=var(as.numeric(meanPredList$predictionError)),
        'relPredictive'=mean(corScores),'relPredictiveVar'=var(corScores),
-       'relPredictive_low'= pred_low,#var(mysample),#pred_low,
-       'relPredictive_high'= pred_high,#var(mysample),#pred_high,
+       'relPredictive_low'= pred_low,#
+       'relPredictive_high'= pred_high,#
        'relPredictive_mean_boot'= mean(mysample)
   )
 }
